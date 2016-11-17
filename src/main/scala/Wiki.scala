@@ -27,8 +27,8 @@ case class WikiCategory(start: Int, end: Int, url: String) {
     // I understand that an asynchronous call works
     // on an event queue and loop, where normally (in Node)
     // a thread pool will pull from the event queue
-    // and work on that job. That thread may actually
-    // block until the job is done and will then call the
+    // and work on that job. That thread may continue
+    // until the job is done and will then throw
     // future callback on the main thread.
 
     // 1) Is there some inherent thread pool used in Akka
