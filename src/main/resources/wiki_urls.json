@@ -1,15 +1,15 @@
 {
   "urls": [
     {
-      "url": "https://wikileaks.org/clinton-emails/emailid/",
+      "path": "/clinton-emails/emailid",
       "size": 30945
     },
     {
-      "url": "https://wikileaks.org/podesta-emails/emailid/",
+      "path": "/podesta-emails/emailid",
       "size": 45526
     },
     {
-      "url": "https://wikileaks.org/dnc-emails/emailid/",
+      "path": "/dnc-emails/emailid",
       "size": 19252
     }
   ]
