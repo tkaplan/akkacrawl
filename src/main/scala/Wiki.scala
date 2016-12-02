@@ -9,7 +9,7 @@ import akka.stream._
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpRequest, HttpResponse}
 import akka.stream.impl.fusing.Scan
-import akka.stream.scaladsl.{Balance, Flow, GraphDSL, Keep, Merge, RunnableGraph, Sink, Source}
+import akka.stream.scaladsl.{Balance, Broadcast, Flow, GraphDSL, Keep, Merge, RunnableGraph, Sink, Source}
 
 import scala.collection.immutable.HashMap
 import scala.concurrent.Future
@@ -74,33 +74,33 @@ object wikiClient extends App {
       case None => List()
     }
 
-    def printResponses(a:(Try[HttpResponse],String)): Unit = {
-      println(s"Status: ${a._1.get.status}, Number: ${a._2}")
-      a._1.get.entity.dataBytes.runWith(Sink.ignore)
+    def printResponses(response:(Try[HttpResponse],String)): Unit = {
+      println(s"Status: ${response._1.get.status}, Number: ${response._2}")
+      response.
+        _1.
+        get.
+        entity.
+        dataBytes.
+        reduce(_.decodeString("UTF-8") + _).
+        runWith(Sink.ignore)
     }
 
-    RunnableGraph.fromGraph(GraphDSL.create(Sink.ignore) { implicit builder =>
-      (snk) =>
-        import GraphDSL.Implicits._
+    val seeds = paths.map(path => HttpRequest(uri=path) -> path)
 
-        val balance = builder.add(Balance[String](parallelism))
-        val merge = builder.add(Merge[Any](parallelism))
-        val flow = Flow[String].map { str =>
-          str.split(" ").groupBy(identity).map(a => (a._1, a._2.length))
-        }
+    val g = RunnableGraph.fromGraph(GraphDSL.create() { implicit builder: GraphDSL.Builder[NotUsed] =>
+      import GraphDSL.Implicits._
+      val balancer = builder.add(Balance[(HttpRequest, String)](6, waitForAllDownstreams = false))
+      val out = Sink.ignore
+      val in = Source(seeds)
+      in ~> balancer.in
+      for (i <- Range(0,6)) {
+        balancer.out(i) ~> wikiFlow.async ~> Flow[(Try[HttpResponse], String)].map(printResponses) ~> out
+      }
 
-        source ~> balance.in
-        for (i <- 0 until parallelism) {
-          balance.out(i) ~> flow ~> merge.in(i)
-        }
-        merge.out ~> snk.in
-        ClosedShape
+      ClosedShape
     })
 
-    val b = paths.map(path => HttpRequest(uri=path) -> path)
-    val response = Source(
-      b
-    ).via(wikiFlow).runWith(printResponses)
+    g.run()(materializer)
   }
 
   // We receive a list of urls and begin performing work extracting the
