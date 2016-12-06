@@ -10,8 +10,10 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpRequest, HttpResponse}
 import akka.stream.impl.fusing.Scan
 import akka.stream.scaladsl.{Balance, Broadcast, Flow, GraphDSL, Keep, Merge, RunnableGraph, Sink, Source}
+import akka.util.ByteString
 
 import scala.collection.immutable.HashMap
+import scala.collection.mutable
 import scala.concurrent.Future
 import scala.util.Try
 import scala.util.parsing.json.JSON
@@ -29,7 +31,7 @@ case class WikiCategory(start: Int, end: Int, url: String) {
 
 case class Result(start: Int, end: Int, url: String)
 
-object wikiClient extends App {
+object wikiClient extends App with WikiHtmlParsable {
   main()
 
   implicit val system = ActorSystem("Akka")
@@ -60,8 +62,8 @@ object wikiClient extends App {
   def main() {
     implicit val system = ActorSystem("WikiSystem")
 
-//    // Our listener is just a reference actor
-//    // which we need for integration testing
+    // Our listener is just a reference actor
+    // which we need for integration testing
     implicit val materializer = ActorMaterializer()
     implicit val wikiFlow = Http().cachedHostConnectionPoolHttps[String]("wikileaks.org")
     implicit val urls = readFile()
@@ -74,15 +76,62 @@ object wikiClient extends App {
       case None => List()
     }
 
-    def printResponses(response:(Try[HttpResponse],String)): Unit = {
+    def parseHtml(response:(Try[HttpResponse],String)): Unit = {
+      var domStack = new mutable.Stack[String]
       println(s"Status: ${response._1.get.status}, Number: ${response._2}")
+
+      /*
+        We have several types of tags we must consider ---
+
+        <tag>  --- implicit self ending with no <some />
+                -- These are edge cases we must handle with
+                   a dictionary of known self ending tags.
+                   These include area, base, br, col, command,
+                   embed, hr, img, input, keygen, link, meta,
+                   param, source, track, wbr
+        <tag/> --- explicit self ending with /
+        <tag></tag> --- stack tags
+
+        We want to create a map object that will be used for
+        data analytics. The structure is the following:
+
+        {
+          "subject": [string],
+          "from": [string],
+          "to": Array[string],
+          "cc": Array[string],
+          "date": [string]
+        }
+       */
+
       response.
         _1.
         get.
         entity.
         dataBytes.
-        reduce(_.decodeString("UTF-8") + _).
-        runWith(Sink.ignore)
+        runFold[(String, Map[String, String])](("", Map()))(
+          (data: (String, Map[String, String]), byteString: ByteString) => {
+            // Lets parse our byte string
+            var dataString = byteString.decodeString("UTF-8") + data._1
+            extractOpeningTag findFirstIn dataString match {
+              case Some(tag) =>
+                eleType findFirstIn tag match {
+                  case Some(tagName) =>
+                    if (tagName.toLowerCase == "doctype") {
+                      // Lets just throw away our element
+                      dataString = extractOpeningTag replaceFirstIn(dataString, "")
+                    }
+                    // Ok now that we got rid of our doctype tag, we can
+                    // process the rest of our data
+                    Constants.isSelfClosing(tagName)
+                  case None => // Something seriously went wrong
+                }
+              case None => // We have no open tags
+            }
+            return dataString
+          }
+        )
+
     }
 
     val seeds = paths.map(path => HttpRequest(uri=path) -> path)
@@ -94,7 +143,7 @@ object wikiClient extends App {
       val in = Source(seeds)
       in ~> balancer.in
       for (i <- Range(0,6)) {
-        balancer.out(i) ~> wikiFlow.async ~> Flow[(Try[HttpResponse], String)].map(printResponses) ~> out
+        balancer.out(i) ~> wikiFlow.async ~> Flow[(Try[HttpResponse], String)].map(parseHtml) ~> out
       }
 
       ClosedShape
