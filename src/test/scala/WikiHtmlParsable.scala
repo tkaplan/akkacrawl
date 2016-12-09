@@ -1,6 +1,8 @@
 import akka.util.ByteString
 import org.scalatest._
 
+import scala.collection.mutable
+
 class WikiHtmlParsableSpec() extends FlatSpec with Matchers with BeforeAndAfterAll {
 
   val htmlDoc1 = Array[ByteString](
@@ -78,24 +80,33 @@ class WikiHtmlParsableSpec() extends FlatSpec with Matchers with BeforeAndAfterA
   "wikiHtmlParsable for htmlDoc1" should "return Map(email-content -> This is a test)" in {
     wikiHtmlParsable.configure(
       Array(
-        wikiHtmlParsable.ifStreamCondition(
-          id = "content2",
-          ele = "div",
-          run = wikiHtmlParsable.ifStreamCondition(
-            ele = "span",
-            clazz = "test",
-            run = wikiHtmlParsable.flatTextExtractor(key = "test")
+        mutable.Stack(
+          wikiHtmlParsable.ifStreamCondition(
+            id = Some("content2"),
+            ele = Some("div"),
+            None,
+            None
+          ),
+          wikiHtmlParsable.ifStreamCondition(
+            ele = Some("span"),
+            clazz = Some("test"),
+            id = None,
+            key = Some("test")
           )
         ),
-        wikiHtmlParsable.ifStreamCondition(
-          id = "content",
-          run = wikiHtmlParsable.flatTextExtractor(key = "test2")
+        mutable.Stack(
+          wikiHtmlParsable.ifStreamCondition(
+            id = Some("content"),
+            None,
+            None,
+            Some("content")
+          )
         )
       )
     )
 
     val mapTest1 = wikiHtmlParsable.reduceHtml(htmlDoc1)
 
-    assert(mapTest1("test2") == "This is a test Wootz")
+    println(mapTest1)
   }
 }
