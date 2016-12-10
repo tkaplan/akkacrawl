@@ -7,13 +7,13 @@ import scala.collection.mutable
   */
 trait WikiHtmlParsable {
   val isOpeningTag = ("<[a-zA-Z]+(>|.*?[^?]>)").r
-  val isClosingTag = ("(<\\/.+?>)").r
-  val extractNextTag = ("(<.+?>)").r
+  val isClosingTag = ("(<\\/.*?>)").r
+  val extractNextTag = ("(<.*?>)").r
   val extractText = ".+?(?=\\[--PIPE--\\])".r
   val eleType = ("(\\w+)").r
-  val extractId = ("(id.+\\\"(.+)\\\")|(id.+\\'(.+)\\')").r
-  val extractClass = ("(class.+\\\"(.+)\\\")|(class.+\\'(.+)\\')").r
-  val extractFromQuotes = ("(?<=(\"|')).+(?=(\"|'))").r
+  val extractId = ("(id.*?\\\"(.*?)\\\")|(id.*?\\'(.*?)\\')").r
+  val extractClass = ("(class.*?\\\"(.*?)\\\")|(class.+\\'(.*?)\\')").r
+  val extractFromQuotes = ("(?<=(\"|')).*?(?=(\"|'))").r
 
   var configureStack = mutable.Stack[ifStreamCondition]()
 
@@ -37,11 +37,13 @@ trait WikiHtmlParsable {
         case id =>
           if (!id.equals(compare.id))
             return false
+        case None =>
       }
       ifO.ele match {
         case ele =>
           if (!ele.equals(compare.ele))
             return false
+        case None =>
       }
       ifO.clazz match {
         case Some(clazz) =>
@@ -49,8 +51,8 @@ trait WikiHtmlParsable {
           var flag = false
           clazzList.foreach((clazz) => flag = flag || (clazz.toLowerCase == clazz.toLowerCase))
           return flag
+        case None =>
       }
-
       return true
     }
 
@@ -61,6 +63,26 @@ trait WikiHtmlParsable {
     return whichStack
   }
 
+  def getNewDataStringAndText(dataString: String):(String, String) = {
+    var _dataString = "\\s+".r.replaceAllIn(dataString.replaceAll("\n"," "), " ")
+    val text = extractText.findFirstIn(
+      extractNextTag.replaceFirstIn(_dataString, "[--PIPE--]")
+    ).getOrElse("")
+
+    _dataString = _dataString.substring(text.size, _dataString.size)
+    return (text, _dataString)
+  }
+
+  def mapToTextMap(domStack: mutable.Stack[Option[DomElement]], text: String): mutable.Stack[Option[DomElement]] = {
+    return domStack.map((dom) =>
+      dom match {
+        case Some(dom) =>
+          Some(DomElement(IfTextMap(dom.ifTextMap.text + text, dom.ifTextMap.id)))
+        case _ => None
+      }
+    )
+  }
+
   def process(dataString:String, dataMap: Map[String, String]): (String, Map[String, String]) = {
       var _dataMap = dataMap
       return extractNextTag findFirstIn dataString match {
@@ -68,17 +90,9 @@ trait WikiHtmlParsable {
           return eleType findFirstIn tag match {
             case Some(tagname) =>
               // Lets extract our text
-              val text = extractText.findFirstIn(extractNextTag.replaceFirstIn(dataString, "[--PIPE--]")).getOrElse("")
-              val _dataString = dataString.substring(text.size, dataString.size)
-
+              val (text, _dataString) = getNewDataStringAndText(dataString)
               // Lets map our new text to our ifStack
-              domStack.map((dom) =>
-                dom match {
-                  case Some(dom) =>
-                    DomElement(IfTextMap(dom.ifTextMap.text + text, dom.ifTextMap.id))
-                  case _ => None
-                }
-              )
+              domStack = mapToTextMap(domStack, text)
 
               if (Constants.isSelfClosing(tagname)) {
                 return process(extractNextTag.replaceFirstIn(_dataString, ""), _dataMap)
@@ -102,19 +116,19 @@ trait WikiHtmlParsable {
               // If it's not a closing or self closing tag, then it must be an open tag
 
               // Now lets see if our new element fits our ifconditions
+
               val compare = ifStreamCondition(
                 extractFromQuotes.
                   findFirstIn(
-                    extractId.findFirstIn(tagname).getOrElse("")
+                    extractId.findFirstIn(tag).getOrElse("")
                   ),
                 Option(tagname),
                 extractFromQuotes.
                   findFirstIn(
-                    extractClass.findFirstIn(tagname).getOrElse("")
+                    extractClass.findFirstIn(tag).getOrElse("")
                   ),
                 None
               )
-
               val ifMatch = compareIf(compare)
 
               if (ifMatch.length > 0) {
@@ -128,15 +142,14 @@ trait WikiHtmlParsable {
               } else {
                 domStack.push(None)
               }
-              return (_dataString, _dataMap)
+              return process(extractNextTag.replaceFirstIn(_dataString, ""), _dataMap)
           }
         case None => return (dataString, dataMap)
       }
   }
 
   def htmlStreamReduce(data: (String, Map[String, String]), byteString: ByteString): (String, Map[String, String]) = {
-    var dataString = byteString.decodeString("UTF-8") + data._1
-
+    var dataString = data._1 + byteString.decodeString("UTF-8")
     // Ok now lets run process which should
     // process our data string until there's
     // nothing else it can do

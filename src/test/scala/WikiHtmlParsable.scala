@@ -77,7 +77,55 @@ class WikiHtmlParsableSpec() extends FlatSpec with Matchers with BeforeAndAfterA
 
   override def beforeAll: Unit = {  }
 
-  "wikiHtmlParsable for htmlDoc1" should "return Map(email-content -> This is a test)" in {
+  "getNewDataStringAndText" should "return these" in {
+    val a =
+      """
+          I
+          am
+          awesome
+          <test>yes
+      """
+    val (text, _dataString) = wikiHtmlParsable.getNewDataStringAndText(a)
+    assert(text == " I am awesome ")
+    assert(_dataString == "<test>yes ")
+  }
+
+  "mapToTextMap" should "return these" in {
+    val a = "this is a com"
+    val b = "plete message"
+    val stack:mutable.Stack[Option[wikiHtmlParsable.DomElement]] = mutable.Stack[Option[wikiHtmlParsable.DomElement]]()
+    stack.push(Some(
+      wikiHtmlParsable.DomElement(
+        wikiHtmlParsable.IfTextMap(
+          "",
+          "test"
+        )
+      )))
+    stack.push(None)
+    val test = wikiHtmlParsable.mapToTextMap(stack, a)
+    test.foreach(
+      x =>
+       x match {
+         case Some(dom) =>
+           assert(dom.ifTextMap.id == "test")
+           assert(dom.ifTextMap.text == a)
+         case None =>
+      }
+    )
+    val test2 = wikiHtmlParsable.mapToTextMap(test, b)
+    test2.foreach(
+      x =>
+        x match {
+          case Some(dom) =>
+            assert(dom.ifTextMap.id == "test")
+            assert(dom.ifTextMap.text == a + b)
+          case None =>
+        }
+    )
+  }
+
+  "wikiHtmlParsable for htmlDoc2" should "return Map(email-content -> This is a test)" in {
+
     wikiHtmlParsable.configure(
       Array(
         mutable.Stack(
@@ -105,8 +153,8 @@ class WikiHtmlParsableSpec() extends FlatSpec with Matchers with BeforeAndAfterA
       )
     )
 
-    val mapTest1 = wikiHtmlParsable.reduceHtml(htmlDoc1)
+    val mapTest2 = wikiHtmlParsable.reduceHtml(htmlDoc2)
 
-    println(mapTest1)
+    println(mapTest2)
   }
 }
