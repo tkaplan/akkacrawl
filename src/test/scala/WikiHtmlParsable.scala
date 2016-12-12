@@ -5,32 +5,7 @@ import scala.collection.mutable
 
 class WikiHtmlParsableSpec() extends FlatSpec with Matchers with BeforeAndAfterAll {
 
-  val htmlDoc1 = Array[ByteString](
-    ByteString(
-      """
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <link stylesheet="blah">
-            <meta ok>
-            <meta this is a"""),
-    ByteString(
-      """>
-            </head>
-            <bo"""),
-    ByteString(
-      """dy>
-            <!-- ok so far so good -->
-            <div id="content" class="email-content">
-              This is a test
-              <div> Wootz </div>
-            </div>
-            </body>
-            </html>
-      """)
-  )
-
-  val htmlDoc2 = Array[ByteString](
+  val htmlDoc = Array[ByteString](
     ByteString(
       """
           <!DOCTYPE html>
@@ -61,17 +36,45 @@ class WikiHtmlParsableSpec() extends FlatSpec with Matchers with BeforeAndAfterA
                 another test
               </span>
             </div>
+            <div id="content">
+            please"""),
+    ByteString(""" work
+            </div>
             </body>
             </html>
       """)
   )
 
   object wikiHtmlParsable extends WikiHtmlParsable {
-
     def reduceHtml(html: Array[ByteString]): Map[String, String] = {
       return html.foldLeft[(String, Map[String, String])](("", Map()))(htmlStreamReduce)._2
     }
   }
+
+  wikiHtmlParsable.configure(Array(
+    mutable.Stack(
+      wikiHtmlParsable.ifStreamCondition(
+        id = Some("content2"),
+        ele = Some("div"),
+        None,
+        None
+      ),
+      wikiHtmlParsable.ifStreamCondition(
+        ele = Some("span"),
+        clazz = Some("test"),
+        id = None,
+        key = Some("test")
+      )
+    ),
+    mutable.Stack(
+      wikiHtmlParsable.ifStreamCondition(
+        id = Some("content"),
+        None,
+        None,
+        Some("test2")
+      )
+    )
+  ))
 
   override def afterAll: Unit = {  }
 
@@ -125,36 +128,8 @@ class WikiHtmlParsableSpec() extends FlatSpec with Matchers with BeforeAndAfterA
   }
 
   "wikiHtmlParsable for htmlDoc2" should "return Map(email-content -> This is a test)" in {
-
-    wikiHtmlParsable.configure(
-      Array(
-        mutable.Stack(
-          wikiHtmlParsable.ifStreamCondition(
-            id = Some("content2"),
-            ele = Some("div"),
-            None,
-            None
-          ),
-          wikiHtmlParsable.ifStreamCondition(
-            ele = Some("span"),
-            clazz = Some("test"),
-            id = None,
-            key = Some("test")
-          )
-        ),
-        mutable.Stack(
-          wikiHtmlParsable.ifStreamCondition(
-            id = Some("content"),
-            None,
-            None,
-            Some("content")
-          )
-        )
-      )
-    )
-
-    val mapTest2 = wikiHtmlParsable.reduceHtml(htmlDoc2)
-
-    println(mapTest2)
+    val mapTest = wikiHtmlParsable.reduceHtml(htmlDoc)
+    assert(mapTest("test") == " we  win  ")
+    assert(mapTest("test2") == " please work ")
   }
 }
