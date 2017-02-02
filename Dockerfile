@@ -44,6 +44,22 @@ RUN tar -xvzf sbt-0.13.12.tgz
 RUN cp sbt/bin/* /usr/bin
 
 RUN rm -rf sbt-0.13.12.tgz sbt
+
+ENV USERNAME dev
+RUN useradd -m $USERNAME && \
+        echo "$USERNAME:$USERNAME" | chpasswd && \
+        mkdir -p /etc/sudoers.d && \
+        usermod --shell /bin/bash $USERNAME && \
+        usermod -aG sudo $USERNAME && \
+        echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/$USERNAME && \
+        chmod 0440 /etc/sudoers.d/$USERNAME && \
+        # Replace 1000 with your user/group id
+        usermod  --uid 1000 $USERNAME && \
+        groupmod --gid 1000 $USERNAME && \
+        chown -R $USERNAME /scala
+
+USER $USERNAME
+
 WORKDIR /scala/akkacrawl
 
 CMD ["/opt/intellij/bin/idea.sh"]
